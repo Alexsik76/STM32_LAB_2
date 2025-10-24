@@ -1,0 +1,24 @@
+# STM32CubeIDE build artifacts
+Debug/
+Release/
+*_Data/
+*_Data_Init/
+
+# STM32CubeIDE project settings
+.settings/
+.project
+.cproject
+.mxproject
+
+# Other common temporary files
+*.launch
+*.bak
+*.tmp
+*.log
+*.map
+*.elf
+*.hex
+*.bin
+*.o
+*.d
+*.~

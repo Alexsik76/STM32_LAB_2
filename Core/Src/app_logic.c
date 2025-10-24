@@ -54,18 +54,22 @@ uint32_t App_Get_Lab_Pulse(char key)
 
   switch (key)
   {
-    case '1': current_lab_pulse = 2000;  break;
-    case '2': current_lab_pulse = 3500;  break;
-    case '3': current_lab_pulse = 5000;  break;
-    case '4': current_lab_pulse = 6500;  break;
-    case '5': current_lab_pulse = 8000;  break;
-    case '6': current_lab_pulse = 9500;  break;
-    case '7': current_lab_pulse = 11000; break;
-    case '8': current_lab_pulse = 12500; break;
-    case '9': current_lab_pulse = 14000; break;
-    case '*': current_lab_pulse = LAB_MIN_PULSE; break;
-    case '#': current_lab_pulse = LAB_MAX_PULSE; break;
-    default: break;
+	case '1':
+	case '*':
+		current_lab_pulse = LAB_MIN_PULSE;
+		break;
+	case '2': current_lab_pulse = 3500;  break;
+	case '3': current_lab_pulse = 5000;  break;
+	case '4': current_lab_pulse = 6500;  break;
+	case '5': current_lab_pulse = 8000;  break;
+	case '6': current_lab_pulse = 9500;  break;
+	case '7': current_lab_pulse = 11000; break;
+	case '8': current_lab_pulse = 12500; break;
+	case '9':
+	case '#':
+		current_lab_pulse = LAB_MAX_PULSE;
+		break;
+	default: break;
   }
   return current_lab_pulse;
 }

@@ -27,7 +27,8 @@ void App_Blink_Start(void);
  */
 void App_Blink_Check_End(void);
 
-uint32_t App_Get_Lab_Pulse(char key);
+uint32_t App_Get_Lab_Pulse(char pressed_key);
 uint32_t App_Map_Pulse_For_Servo(uint32_t lab_pulse);
+extern TIM_HandleTypeDef htim3;
 
 #endif /* INC_APP_LOGIC_H_ */

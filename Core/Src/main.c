@@ -43,12 +43,16 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 static uint32_t current_lab_pulse = LAB_MIN_PULSE;
 static char last_pressed_key = '-';
+volatile Keypad_State_t g_keypad_state = KEY_STATE_IDLE;
+volatile char g_keypad_last_key = '\0';
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,6 +61,7 @@ static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 static long map(long x, long in_min, long in_max, long out_min, long out_max);
 /* USER CODE END PFP */
@@ -105,6 +110,7 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2); // A7
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3); // B8
@@ -118,26 +124,25 @@ int main(void)
 
 	  App_Blink_Check_End();
 
-	  char pressed_key = Keypad_Get_Pressed_Key();
+	  if (g_keypad_state == KEY_STATE_READY) {
+		  char pressed_key = g_keypad_last_key;
+		  g_keypad_state = KEY_STATE_IDLE;
 
-	        if (pressed_key != '\0')
-	        {
-	        	last_pressed_key = pressed_key;
+		  last_pressed_key = pressed_key;
+		  App_Blink_Start();
+		  current_lab_pulse = App_Get_Lab_Pulse(pressed_key);
+		  uint32_t servo_pulse = App_Map_Pulse_For_Servo(current_lab_pulse);
+		  uint8_t percentage = map(current_lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70);
 
-	        	App_Blink_Start();
 
-	        	current_lab_pulse = App_Get_Lab_Pulse(pressed_key);
-	        	uint32_t servo_pulse = App_Map_Pulse_For_Servo(current_lab_pulse);
-	        	uint8_t percentage = map(current_lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70);
+		  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, servo_pulse); // A7
+		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, current_lab_pulse); // B8
 
-	          // Встановлюємо ШІМ
-	        	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, servo_pulse); // A7
-	        	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, current_lab_pulse); // B8
+		Screen_UI_Display_Values(last_pressed_key, percentage, servo_pulse);
+		HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+		HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+	  }
 
-	          // Оновлюємо екран новими значеннями
-	        	Screen_UI_Display_Values(last_pressed_key, percentage, servo_pulse);
-
-	        }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -215,6 +220,55 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 7199;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 499;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OnePulse_Init(&htim2, TIM_OPMODE_SINGLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -376,16 +430,77 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : PA8 PA9 PA10 PA11 */
   GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0); // EXTI9_5 для PA8/PA9
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0); // EXTI15_10 для PA10/PA11
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+
+	if (((GPIO_Pin == GPIO_PIN_8) ||
+	         (GPIO_Pin == GPIO_PIN_9) ||
+	         (GPIO_Pin == GPIO_PIN_10) ||
+	         (GPIO_Pin == GPIO_PIN_11)) &&
+	        (g_keypad_state == KEY_STATE_IDLE)){
+
+        g_keypad_state = KEY_STATE_DEBOUNCING;
+        HAL_TIM_Base_Stop_IT(&htim2);
+        // Вимикаємо переривання, щоб уникнути брязкоту
+        HAL_NVIC_DisableIRQ(EXTI9_5_IRQn); // <--- Ось ця функція!
+        HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
+
+        __HAL_TIM_SET_COUNTER(&htim2, 0); // Скидаємо лічильник
+		__HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+        // Запускаємо таймер на 50мс (One-Pulse Mode)
+        HAL_TIM_Base_Start_IT(&htim2);
+    }
+}
+
+/**
+  * @brief  Обробник Таймера (завершення 50мс анти-брязкоту)
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) { // Це наш таймер
+
+        // 1. КРИТИЧНО: Зупиняємо таймер та очищуємо його стан
+        HAL_TIM_Base_Stop_IT(&htim2);
+
+        // Скидаємо лічильник та прапор оновлення після зупинки для чистого старту
+        __HAL_TIM_SET_COUNTER(&htim2, 0);
+        __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+
+        // 2. Логіка сканування (працює після 50мс)
+        char key = Keypad_Get_Pressed_Key_NO_DELAY();
+
+        if (key != '\0') {
+            g_keypad_last_key = key;
+            g_keypad_state = KEY_STATE_READY;
+        } else {
+            g_keypad_state = KEY_STATE_IDLE; // Це був лише брязкіт
+        }
+
+        // 3. Очищуємо прапорці EXTI, які могли спрацювати за час брязкоту
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_8);
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_10);
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_11);
+
+        // 4. Вмикаємо переривання EXTI знову, якщо ми в стані очікування
+        if (g_keypad_state == KEY_STATE_IDLE) {
+             HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+             HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+        }
+    }
+}
 /* USER CODE END 4 */
 
 /**

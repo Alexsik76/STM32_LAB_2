@@ -43,12 +43,12 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
-
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 static uint32_t current_lab_pulse = LAB_MIN_PULSE;
+static char last_pressed_key = '-';
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -118,22 +118,24 @@ int main(void)
 
 	  App_Blink_Check_End();
 
-	  char pressed_key = Keypad_Get_Pressed_Key(); //
+	  char pressed_key = Keypad_Get_Pressed_Key();
 
 	        if (pressed_key != '\0')
 	        {
-	        	App_Blink_Start(); //
+	        	last_pressed_key = pressed_key;
 
-	        	current_lab_pulse = App_Get_Lab_Pulse(pressed_key); //
-	        	uint32_t servo_pulse = App_Map_Pulse_For_Servo(current_lab_pulse); //
-	        	uint8_t percentage = map(current_lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70); //
+	        	App_Blink_Start();
+
+	        	current_lab_pulse = App_Get_Lab_Pulse(pressed_key);
+	        	uint32_t servo_pulse = App_Map_Pulse_For_Servo(current_lab_pulse);
+	        	uint8_t percentage = map(current_lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70);
 
 	          // Встановлюємо ШІМ
 	        	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, servo_pulse); // A7
 	        	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, current_lab_pulse); // B8
 
 	          // Оновлюємо екран новими значеннями
-	        	Screen_UI_Display_Values(percentage, servo_pulse);
+	        	Screen_UI_Display_Values(last_pressed_key, percentage, servo_pulse);
 
 	        }
     /* USER CODE END WHILE */

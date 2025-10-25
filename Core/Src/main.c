@@ -24,6 +24,7 @@
 #include "keypad.h"
 #include "app_logic.h"
 #include "screen_ui.h"
+#include "ui_feedback.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,8 +50,7 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-static uint32_t current_lab_pulse = LAB_MIN_PULSE;
-static char last_pressed_key = '-';
+static char last_pressed_key;
 volatile Keypad_State_t g_keypad_state = KEY_STATE_IDLE;
 volatile char g_keypad_last_key = '\0';
 /* USER CODE END PV */
@@ -63,19 +63,10 @@ static void MX_TIM4_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-static long map(long x, long in_min, long in_max, long out_min, long out_max);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static long map(long x, long in_min, long in_max, long out_min, long out_max)
-{
-  // Захист від ділення на нуль
-  if (in_max == in_min) {
-    return out_min;
-  }
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
 /* USER CODE END 0 */
 
 /**
@@ -121,26 +112,38 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // 1. Клавіша натиснута
+	  if (g_keypad_state == KEY_STATE_READY)
+	      {
+	          // Переходимо в стан очікування, поки клавішу не відпустять
+	          g_keypad_state = KEY_STATE_WAIT_FOR_RELEASE;
 
-	  App_Blink_Check_End();
+	          // Копіюємо і обробляємо натиснуту клавішу
+	          last_pressed_key = g_keypad_last_key;
 
-	  if (g_keypad_state == KEY_STATE_READY) {
-		  char pressed_key = g_keypad_last_key;
-		  g_keypad_state = KEY_STATE_IDLE;
+	          App_Pulse_Values_t pulses = App_Process_Keypress(last_pressed_key);
 
-		  last_pressed_key = pressed_key;
-		  App_Blink_Start();
-		  current_lab_pulse = App_Get_Lab_Pulse(pressed_key);
-		  uint32_t servo_pulse = App_Map_Pulse_For_Servo(current_lab_pulse);
-		  uint8_t percentage = map(current_lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70);
+	          // Оновлюємо ШІМ та екран
+	          __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulses.servo_pulse);
+	          __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, pulses.lab_pulse);
 
+	          Screen_UI_Display_Values(last_pressed_key, pulses.lab_pulse, pulses.servo_pulse);
+	      }
 
-		  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, servo_pulse); // A7
-		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, current_lab_pulse); // B8
+	  // 2. Перевіряємо, чи клавішу відпустили
+	  if (g_keypad_state == KEY_STATE_WAIT_FOR_RELEASE)
+	  {
+		  // Постійно опитуємо клавіатуру (це швидко, без затримок)
+		  if (Keypad_Get_Pressed_Key_NO_DELAY() == '\0')
+		  {
+			  // Клавіша фізично відпущена!
+			  // Переходимо в стан анти-брязкоту для ВІДПУСКАННЯ
+			  g_keypad_state = KEY_STATE_DEBOUNCING_RELEASE;
 
-		Screen_UI_Display_Values(last_pressed_key, percentage, servo_pulse);
-		HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-		HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+			  // Запускаємо той самий таймер TIM2 ще раз,
+			  // щоб відфільтрувати брязкіт відпускання
+			  HAL_TIM_Base_Start_IT(&htim2);
+		  }
 	  }
 
     /* USER CODE END WHILE */
@@ -434,12 +437,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0); // EXTI9_5 для PA8/PA9
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0); // EXTI15_10 для PA10/PA11
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -451,8 +456,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	         (GPIO_Pin == GPIO_PIN_10) ||
 	         (GPIO_Pin == GPIO_PIN_11)) &&
 	        (g_keypad_state == KEY_STATE_IDLE)){
+		UI_Blink_Start();
 
-        g_keypad_state = KEY_STATE_DEBOUNCING;
+		g_keypad_state = KEY_STATE_DEBOUNCING_PRESS;
         HAL_TIM_Base_Stop_IT(&htim2);
         // Вимикаємо переривання, щоб уникнути брязкоту
         HAL_NVIC_DisableIRQ(EXTI9_5_IRQn); // <--- Ось ця функція!
@@ -471,30 +477,47 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) { // Це наш таймер
 
-        // 1. КРИТИЧНО: Зупиняємо таймер та очищуємо його стан
+        // 1. Завжди зупиняємо таймер
         HAL_TIM_Base_Stop_IT(&htim2);
-
-        // Скидаємо лічильник та прапор оновлення після зупинки для чистого старту
         __HAL_TIM_SET_COUNTER(&htim2, 0);
         __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
 
-        // 2. Логіка сканування (працює після 50мс)
-        char key = Keypad_Get_Pressed_Key_NO_DELAY();
+        // 2. Розбираємось, чому нас викликали
+        if (g_keypad_state == KEY_STATE_DEBOUNCING_PRESS)
+        {
+            // --- Закінчився анти-брязкіт НАТИСКАННЯ ---
+            UI_Blink_End(); // Вимикаємо LED рівно через 50мс
 
-        if (key != '\0') {
-            g_keypad_last_key = key;
-            g_keypad_state = KEY_STATE_READY;
-        } else {
-            g_keypad_state = KEY_STATE_IDLE; // Це був лише брязкіт
+            char key = Keypad_Get_Pressed_Key_NO_DELAY();
+            if (key != '\0') {
+                // Клавіша реальна
+                g_keypad_last_key = key;
+                g_keypad_state = KEY_STATE_READY;
+            } else {
+                // Це був просто брязкіт, клавіша не натиснута
+                g_keypad_state = KEY_STATE_IDLE;
+            }
+        }
+        else if (g_keypad_state == KEY_STATE_DEBOUNCING_RELEASE)
+        {
+            // --- Закінчився анти-брязкіт ВІДПУСКАННЯ ---
+
+            // Перевіряємо, чи клавіша *досі* відпущена
+            if (Keypad_Get_Pressed_Key_NO_DELAY() == '\0') {
+                g_keypad_state = KEY_STATE_IDLE;
+            } else {
+                // Це був брязкіт, але користувач знову натиснув
+                g_keypad_state = KEY_STATE_WAIT_FOR_RELEASE;
+            }
         }
 
-        // 3. Очищуємо прапорці EXTI, які могли спрацювати за час брязкоту
+        // 3. Завжди очищуємо прапорці EXTI, які могли спрацювати
         __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_8);
         __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);
         __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_10);
         __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_11);
 
-        // 4. Вмикаємо переривання EXTI знову, якщо ми в стані очікування
+        // 4. Вмикаємо переривання, ТІЛЬКИ якщо ми 100% повернулись в IDLE
         if (g_keypad_state == KEY_STATE_IDLE) {
              HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
              HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
@@ -530,6 +553,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	printf("Wrong parameters value: file %s on line %d\r\n", file, line);
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

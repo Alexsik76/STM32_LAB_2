@@ -11,37 +11,14 @@
 
 
 
-static long map(long x, long in_min, long in_max, long out_min, long out_max)
+long map(long x, long in_min, long in_max, long out_min, long out_max)
 {
+	if (in_max == in_min) {
+	    return out_min;
+	  }
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
-
-static uint32_t blink_start_time = 0; // Час початку блимання
-static uint8_t is_blinking = 0;       // Прапор, що світлодіод зараз блимає
-
-/**
- * @brief Вмикає світлодіод для зворотного зв'язку (початок блимання).
- */
-void App_Blink_Start(void)
-{
-  HAL_GPIO_WritePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin, GPIO_PIN_RESET); // Увімкнути
-  blink_start_time = HAL_GetTick(); // Запам'ятати час
-  is_blinking = 1;                  // Встановити прапор
-}
-
-/**
- * @brief Перевіряє, чи час блимання вийшов, і вимикає світлодіод.
- * Викликати у головному циклі.
- */
-void App_Blink_Check_End(void)
-{
-  if (is_blinking && (HAL_GetTick() - blink_start_time >= 50)) // Якщо блимає і пройшло 50 мс
-  {
-    HAL_GPIO_WritePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin, GPIO_PIN_SET); // Вимкнути
-    is_blinking = 0; // Скинути прапор
-  }
-}
 
 /**
   * @brief  Розраховує і повертає значення ШІМ для серво на основі клавіші.
@@ -77,4 +54,23 @@ uint32_t App_Get_Lab_Pulse(char key)
 uint32_t App_Map_Pulse_For_Servo(uint32_t lab_pulse)
 {
     return map(lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, SERVO_MIN_PULSE, SERVO_MAX_PULSE);
+}
+
+/**
+  * @brief  Обробляє натискання клавіші та повертає всі розраховані значення ШІМ.
+  * @param  pressed_key: Символ натиснутої клавіші.
+  * @retval Структура App_Pulse_Values_t з усіма значеннями.
+  */
+App_Pulse_Values_t App_Process_Keypress(char pressed_key)
+{
+    App_Pulse_Values_t values;
+
+    // 1. Отримуємо імпульс для лабораторної
+    // (Ця функція вже має 'static' змінну, тому вона пам'ятає стан)
+    values.lab_pulse = App_Get_Lab_Pulse(pressed_key);
+
+    // 2. Розраховуємо імпульс для серво
+    values.servo_pulse = App_Map_Pulse_For_Servo(values.lab_pulse);
+
+    return values;
 }

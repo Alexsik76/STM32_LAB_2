@@ -17,5 +17,5 @@ void Screen_UI_Init(void);
  * @param servo_pulse Значення для A7 у мікросекундах (650-2500).
  */
 // <--- ЗМІНА: Додано параметр 'key'
-void Screen_UI_Display_Values(char key, uint8_t percentage, uint16_t servo_pulse);
+void Screen_UI_Display_Values(char key, uint32_t lab_pulse, uint32_t servo_pulse);
 #endif /* INC_SCREEN_UI_H_ */

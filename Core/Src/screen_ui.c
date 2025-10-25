@@ -7,6 +7,7 @@
 
 
 #include "screen_ui.h"
+#include "app_logic.h"
 
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
@@ -24,7 +25,7 @@ void Screen_UI_Init(void) {
     ssd1306_SetCursor(0, 0);
     ssd1306_WriteString("ZPI-ZP-31", Font_11x18, White);
     ssd1306_SetCursor(0, 25);
-    ssd1306_WriteString("Starting...", Font_7x10, White);
+    ssd1306_WriteString("Press a key", Font_7x10, White);
 
     // Відображаємо буфер на екрані
     ssd1306_UpdateScreen();
@@ -35,7 +36,10 @@ void Screen_UI_Init(void) {
  * @param percentage Значення для B8 у відсотках (10-70).
  * @param servo_pulse Значення для A7 у мікросекундах (650-2500).
  */
-void Screen_UI_Display_Values(char key, uint8_t percentage, uint16_t servo_pulse) { // <--- Нова назва та параметри
+void Screen_UI_Display_Values(char key, uint32_t lab_pulse, uint32_t servo_pulse) { // <--- Нова назва та параметри
+
+	uint8_t percentage = map(lab_pulse, LAB_MIN_PULSE, LAB_MAX_PULSE, 10, 70);
+
 	char buffer_key[20]; // Буфер для рядка клавіші
 	char buffer_b8[20]; // Буфер для рядка B8
 	char buffer_a7[20]; // Буфер для рядка A7
